@@ -1,8 +1,5 @@
-import streamlit as st  # Import python packages
-from snowflake.snowpark.context import get_active_session
-
-from snowflake.core import Root
-
+import streamlit as st
+from snowflake.snowpark.session import Session
 import pandas as pd
 import json
 
@@ -10,59 +7,55 @@ pd.set_option("max_colwidth", None)
 
 NUM_CHUNKS = st.sidebar.slider("Number of retrieved documents", min_value=1, max_value=10, value=3, step=1)
 
-# service parameters
-CORTEX_SEARCH_DATABASE = "CHEMDB"
-CORTEX_SEARCH_SCHEMA = "PUBLIC"
-CORTEX_SEARCH_SERVICE = "CC_SEARCH_SERVICE_CS"
-######
-######
+CORTEX_SEARCH_DATABASE = st.secrets["CORTEX_SEARCH_DATABASE"]
+CORTEX_SEARCH_SCHEMA = st.secrets["CORTEX_SEARCH_SCHEMA"]
+CORTEX_SEARCH_SERVICE = st.secrets["CORTEX_SEARCH_SERVICE"]
 
-# columns to query in the service
-COLUMNS = [
-    "ABSTRACT",
-    "AUTHORS",
-    "PUBLICATION_YEAR"
-]
+snowflake_config = {
+    "account": st.secrets["snowflake_account"],
+    "user": st.secrets["snowflake_user"],
+    "password": st.secrets["snowflake_password"],
+    "role": st.secrets["snowflake_role"],
+    "warehouse": st.secrets["snowflake_warehouse"],
+    "database": st.secrets["snowflake_database"],
+    "schema": st.secrets["snowflake_schema"],
+}
 
-session = get_active_session()
-root = Root(session)
+session = Session.builder.configs(snowflake_config).create()
 
-svc = root.databases[CORTEX_SEARCH_DATABASE].schemas[CORTEX_SEARCH_SCHEMA].cortex_search_services[CORTEX_SEARCH_SERVICE]
+COLUMNS = ["ABSTRACT", "AUTHORS", "PUBLICATION_YEAR"]
 
+svc = session.table(f"{CORTEX_SEARCH_DATABASE}.{CORTEX_SEARCH_SCHEMA}.{CORTEX_SEARCH_SERVICE}")
 
 ### Functions
 
 def config_options():
     st.sidebar.expander("Session State").write(st.session_state)
 
-
 def get_similar_chunks_search_service(query):
+    # Query the Snowflake Cortex search service
     response = svc.search(query, COLUMNS, limit=NUM_CHUNKS)
-
     st.sidebar.json(response.json())
-
     return response.json()
 
-
 def create_prompt(myquestion):
-    if st.session_state.rag == 1:
+    if st.session_state.rag:
         prompt_context = get_similar_chunks_search_service(myquestion)
 
         if json.loads(prompt_context)['results'] is not None:
-
             prompt = f"""
                You are a scientific chemical chat agent that extracts information from research papers provided
                between <context> and </context> tags to respond to questions.
-               When ansering the question contained between <question> and </question> tags
+               When answering the question contained between <question> and </question> tags
                be concise and do not hallucinate.
 
                If any provided papers are irrelevant, ignore them and do not mention them.
 
-               Summarize any relevant information from the papers and reason over it before giving your final answer using the formatting \'Answer: [answer]\'. 
+               Summarize any relevant information from the papers and reason over it before giving your final answer using the formatting 'Answer: [answer]'. 
                Your response should be in the tone of scientific writing, and cite papers in APA style as is appropriate. 
-               If any conclusions are uncertain, you should answer \'maybe\'.
+               If any conclusions are uncertain, you should answer 'maybe'.
 
-               Your final answer should be \'yes\', \'no\', or \'maybe\'. 
+               Your final answer should be 'yes', 'no', or 'maybe'. 
 
                <context>          
                {prompt_context}
@@ -73,18 +66,16 @@ def create_prompt(myquestion):
                Answer: 
                """
 
-            json_data = json.loads(prompt_context)
-
+            relative_paths = "None"  # Add logic if paths are available
         else:
             prompt = f"""
                You are a scientific chemical chat agent.
-               When ansering the question contained between <question> and </question> tags
+               When answering the question contained between <question> and </question> tags
                be concise and do not hallucinate.
 
-               Summarize relevant information from the paper and reason over it before giving your final answer using the formatting \'Answer: [answer]\'. Your response should be in the tone of scientific writing, and cite the papers in the context in APA style as needed. If the conclusions of the paper are uncertain, you should answer \'maybe\'.
+               Summarize relevant information from the paper and reason over it before giving your final answer using the formatting 'Answer: [answer]'. Your response should be in the tone of scientific writing, and cite the papers in the context in APA style as needed. If the conclusions of the paper are uncertain, you should answer 'maybe'.
 
-               Your final answer should be \'yes\', \'no\', or \'maybe\'. 
-
+               Your final answer should be 'yes', 'no', or 'maybe'. 
 
                <question>  
                {myquestion}
@@ -92,12 +83,10 @@ def create_prompt(myquestion):
                Answer: 
                """
 
-            json_data = json.loads(prompt_context)
-
-        relative_paths = "None"  # set(item['relative_path'] for item in json_data['results'])
+            relative_paths = "None"
 
     else:
-        prompt = f"""[0]
+        prompt = f"""
          'Question:  
            {myquestion} 
            Answer: '
@@ -106,25 +95,16 @@ def create_prompt(myquestion):
 
     return prompt, relative_paths
 
-
 def complete(myquestion):
     prompt, relative_paths = create_prompt(myquestion)
     cmd = """
             select snowflake.cortex.complete(?, ?) as response
           """
-
     df_response = session.sql(cmd, params=['mistral-large2', prompt]).collect()
     return df_response, relative_paths
 
-
 def main():
-    st.title(f"Chemical Research Question-Answering Assistant with Snowflake Cortex")
-    # st.write("This is the list of documents you already have and that will be used to answer your questions:")
-    # docs_available = session.sql("ls @docs").collect()
-    # list_docs = []
-    # for doc in docs_available:
-    #    list_docs.append(doc["name"])
-    # st.dataframe(list_docs)
+    st.title("Chemical Research Question-Answering Assistant with Snowflake Cortex")
 
     config_options()
 
@@ -200,7 +180,6 @@ def main():
         st.write("Evaluation Metrics:")
         st.write(f"**Accuracy:** {accuracy:.2f}")
         st.write(f"**F1 Score:** {f1:.2f}")
-
 
 if __name__ == "__main__":
     main()
