@@ -1,1 +1,1 @@
-snowflake
+snowflake-snowpark-python
