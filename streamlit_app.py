@@ -7,18 +7,14 @@ pd.set_option("max_colwidth", None)
 
 NUM_CHUNKS = st.sidebar.slider("Number of retrieved documents", min_value=1, max_value=10, value=3, step=1)
 
-CORTEX_SEARCH_DATABASE = st.secrets["CORTEX_SEARCH_DATABASE"]
-CORTEX_SEARCH_SCHEMA = st.secrets["CORTEX_SEARCH_SCHEMA"]
-CORTEX_SEARCH_SERVICE = st.secrets["CORTEX_SEARCH_SERVICE"]
+CORTEX_SEARCH_DATABASE = "CHEMDB"
+CORTEX_SEARCH_SCHEMA = "PUBLIC"
+CORTEX_SEARCH_SERVICE = "CC_SEARCH_SERVICE_CS"
 
 snowflake_config = {
     "account": st.secrets["snowflake_account"],
     "user": st.secrets["snowflake_user"],
-    "password": st.secrets["snowflake_password"],
-    "role": st.secrets["snowflake_role"],
-    "warehouse": st.secrets["snowflake_warehouse"],
-    "database": st.secrets["snowflake_database"],
-    "schema": st.secrets["snowflake_schema"],
+    "password": st.secrets["snowflake_password"]
 }
 
 session = Session.builder.configs(snowflake_config).create()
